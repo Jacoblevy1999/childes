@@ -7,11 +7,25 @@ import requests, zipfile, io
 from pla import chat
 import glob, os
 
+interesting_corpora = [
+    "Braunwald",
+    "NewmanRatner",
+    "Sachs",
+    "Snow",
+    "Soderstrom",
+    "Providence",
+    "Paris",
+    "Lyon",
+    "Stuggart",
+    "TAKI",
+    "Lacerda",
+    "Garmann",
+]
 
-vc = pd.read_csv('vc.csv')
+vc = pd.read_csv("vc.csv")
 links = {}
 for index, row in vc.iterrows():
-    links[row['Corpus']] = row['link']
+    links[row["Corpus"]] = row["link"]
 
 
 def open(corpus):
@@ -19,43 +33,47 @@ def open(corpus):
     Opens the CHILDES webpage for a [corpus], entered as a string of the name of the corpus
     (ie 'Bates', 'Brown', etc)
     """
-    os.system("open \"\"" + links[corpus])
+    os.system('open ""' + links[corpus])
+
 
 def download_zip(corpus):
     """
     Downloads and unzips the [corpus] to the current directory.
     """
     link = vc[corpus]
-    link = link.replace('html', 'zip')
-    link = link.replace('access', 'data')
+    link = link.replace("html", "zip")
+    link = link.replace("access", "data")
     r = requests.get(link)
     z = zipfile.ZipFile(io.BytesIO(r.content))
     z.extractall()
+
 
 def label_start(row):
     """
     Helper function for pandize
     """
-    if row['Duration']==None:
+    if row["Duration"] == None:
         return None
     else:
-        return row['Duration'][0]/1000
+        return row["Duration"][0] / 1000
+
 
 def label_end(row):
     """
     Helper function for pandize
     """
-    if row['Duration']==None:
+    if row["Duration"] == None:
         return None
     else:
-        return row['Duration'][1]/1000
+        return row["Duration"][1] / 1000
+
 
 def phonemize(row, tiers):
     """
     Helper function for pandize
     """
-    if '%pho' in tiers[row['Index']]:
-        return tiers[row['Index']]['%pho']
+    if "%pho" in tiers[row["Index"]]:
+        return tiers[row["Index"]]["%pho"]
     return None
 
 
@@ -67,16 +85,20 @@ def pandize(filepath):
     """
     reader = chat.SingleReader(filepath)
     tiers = reader.index_to_tiers()
+    s = list(reader.participants().keys())
+    s = ", ".join(s)
     u = reader.utterances(time_marker=True)
-    df = pd.DataFrame(u, columns =['Speaker', 'Vocalization', 'Duration'])
-    df['Corpus'] = filepath[:filepath.find('/')]
-    df['Index'] = df.index
-    df['file'] = filepath
-    df['onset'] = df.apply (lambda row: label_start(row), axis=1)
-    df['offset'] = df.apply (lambda row: label_end(row), axis=1)
-    df['Pho'] = df.apply (lambda row: phonemize(row, tiers), axis=1)
-    df = df.drop(['Duration', 'Index'], axis=1)
+    df = pd.DataFrame(u, columns=["Speaker", "Vocalization", "Duration"])
+    df["Participants"] = s
+    df["Corpus"] = filepath[: filepath.find("/")]
+    df["Index"] = df.index
+    df["file"] = filepath
+    df["onset"] = df.apply(lambda row: label_start(row), axis=1)
+    df["offset"] = df.apply(lambda row: label_end(row), axis=1)
+    df["Pho"] = df.apply(lambda row: phonemize(row, tiers), axis=1)
+    df = df.drop(["Duration", "Index"], axis=1)
     return df
+
 
 def combine(arr):
     """
@@ -95,6 +117,7 @@ def combine(arr):
     print(errs)
     return d1
 
+
 def full_corpus(corpus):
     """
     Similar to combine, but returns a dataframe representing pandize for every
@@ -107,6 +130,7 @@ def full_corpus(corpus):
                 f.append(str((os.path.join(root, file))))
     return combine(f)
 
+
 def mult_corpora(corpora):
     """
     Returns a dataframe that is full_corpus of every corpus in corpora
@@ -115,6 +139,7 @@ def mult_corpora(corpora):
     for i in range(1, len(corpora)):
         d1 = d1.append(full_corpus(corpora[i]))
     return d1
+
 
 def turns(df):
     """
@@ -125,56 +150,138 @@ def turns(df):
     mot = []
     m = 0
     for index, row in df.iterrows():
-        if row['Speaker']=='CHI':
+        if row["Speaker"] == "CHI":
             try:
-                chi.append((row['onset'],row['offset']))
-                m = max(m, row['onset'])
+                chi.append((row["onset"], row["offset"]))
+                m = max(m, row["onset"])
             except:
                 pass
-        elif row['Speaker']=='MOT':
+        elif row["Speaker"] == "MOT":
             try:
-                mot.append((row['onset'],row['offset']))
-                m = max(m, row['onset'])
+                mot.append((row["onset"], row["offset"]))
+                m = max(m, row["onset"])
             except:
                 pass
-    return (chi,mot,m)
+    return (chi, mot, m)
 
-def dual_stream_viz(df,title):
+
+def dual_stream_viz(df, title):
     """
     Plots turn-taking for dataframe df
     """
     alpha = 1
     maxm = turns(df)[2]
-    variable_1 = df.loc[df['Speaker'] == 'CHI']
-    variable_2 = df.loc[df['Speaker'] == 'MOT']
-    variable_1['Color']='red'
-    variable_2['Color']='blue'
-    begin = 0         
-    print(maxm)                                                                          #  dataset begin time
-    qtr = (maxm - begin)/4                                                                        #  divide into quarters
-    columns = ['onset','offset']
-    qtr1 = pd.DataFrame(np.array([[begin,qtr+begin],]),columns=['onset','offset'])                #  1st quarter to visualize
-    qtr2 = pd.DataFrame(np.array([[qtr+1+begin,(qtr*2)+begin],]),columns=columns)                 #  2nd quarter to visualize
-    qtr3 = pd.DataFrame(np.array([[(qtr*2+1)+begin,(qtr*3)+begin],]),columns=columns)             #  3rd quarter to visualize
-    qtr4 = pd.DataFrame(np.array([[(qtr*3+1)+begin,(qtr*4)+begin],]),columns=columns)             #  4th quarter to visualize
-    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4,figsize = (18.5, 12))
-    ax1.broken_barh(list(zip(variable_1["onset"].values, (variable_1["offset"] - variable_1["onset"]).values)), (2.5,.99),color=variable_1['Color'],edgecolor="black", alpha=alpha)
-    ax1.set_xlim(qtr1.at[0,'onset'],qtr1.at[0,'offset'])
-    ax2.broken_barh(list(zip(variable_1["onset"].values, (variable_1["offset"] - variable_1["onset"]).values)), (2.5,.99),color=variable_1['Color'],edgecolor="black", alpha=alpha)
-    ax2.set_xlim(qtr2.at[0,'onset'],qtr2.at[0,'offset'])
-    ax3.broken_barh(list(zip(variable_1["onset"].values, (variable_1["offset"] - variable_1["onset"]).values)), (2.5,.99),color=variable_1['Color'],edgecolor="black", alpha=alpha)
-    ax3.set_xlim(qtr3.at[0,'onset'],qtr3.at[0,'offset'])
-    ax4.broken_barh(list(zip(variable_1["onset"].values, (variable_1["offset"] - variable_1["onset"]).values)), (2.5,.99),color=variable_1['Color'],edgecolor="black", alpha=alpha)
-    ax4.set_xlim(qtr4.at[0,'onset'],qtr4.at[0,'offset'])
-    ax1.broken_barh(list(zip(variable_2["onset"].values, (variable_2["offset"] - variable_2["onset"]).values)), (1.5,.99),color=variable_2['Color'],edgecolor="black", alpha=alpha)
-    ax1.set_xlim(qtr1.at[0,'onset'],qtr1.at[0,'offset'])
-    ax2.broken_barh(list(zip(variable_2["onset"].values, (variable_2["offset"] - variable_2["onset"]).values)), (1.5,.99),color=variable_2['Color'],edgecolor="black", alpha=alpha)
-    ax2.set_xlim(qtr2.at[0,'onset'],qtr2.at[0,'offset'])
-    ax3.broken_barh(list(zip(variable_2["onset"].values, (variable_2["offset"] - variable_2["onset"]).values)), (1.5,.99),color=variable_2['Color'],edgecolor="black", alpha=alpha)
-    ax3.set_xlim(qtr3.at[0,'onset'],qtr3.at[0,'offset'])
-    ax4.broken_barh(list(zip(variable_2["onset"].values, (variable_2["offset"] - variable_2["onset"]).values)), (1.5,.99),color=variable_2['Color'],edgecolor="black", alpha=alpha)
-    ax4.set_xlim(qtr4.at[0,'onset'],qtr4.at[0,'offset'])
-    plt.savefig('{}.png'.format(title))
+    par = df.loc[0, "Participants"].split(", ")
+    variables = []
+    for i in range(len(par)):
+        variables.append(df.loc[df["Speaker"] == par[i]])
+    colors = ["red", "blue", "green", "brown"]
+    for j in range(min(len(variables), 4)):
+        print(j)
+        variables[j]["Color"] = colors[j]
+    variable_1 = variables[0]
+    try:
+        variable_2 = variables[1]
+    except:
+        print("no 2")
+    try:
+        variable_3 = variables[2]
+    except:
+        print("no 3")
+    try:
+        variable_4 = variables[3]
+    except:
+        print("no 4")
+    begin = 0
+    qtr = (maxm - begin) / 4  #  divide into quarters
+    columns = ["onset", "offset"]
+    qtr1 = pd.DataFrame(
+        np.array(
+            [
+                [begin, qtr + begin],
+            ]
+        ),
+        columns=["onset", "offset"],
+    )  #  1st quarter to visualize
+    qtr2 = pd.DataFrame(
+        np.array(
+            [
+                [qtr + 1 + begin, (qtr * 2) + begin],
+            ]
+        ),
+        columns=columns,
+    )  #  2nd quarter to visualize
+    qtr3 = pd.DataFrame(
+        np.array(
+            [
+                [(qtr * 2 + 1) + begin, (qtr * 3) + begin],
+            ]
+        ),
+        columns=columns,
+    )  #  3rd quarter to visualize
+    qtr4 = pd.DataFrame(
+        np.array(
+            [
+                [(qtr * 3 + 1) + begin, (qtr * 4) + begin],
+            ]
+        ),
+        columns=columns,
+    )  #  4th quarter to visualize
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, figsize=(18.5, 12))
+    for i in variables:
+        ax1.broken_barh(
+            list(
+                zip(
+                    i["onset"].values,
+                    (i["offset"] - i["onset"]).values,
+                )
+            ),
+            (2.5, 0.99),
+            color=i["Color"],
+            edgecolor="black",
+            alpha=alpha,
+        )
+        ax1.set_xlim(qtr1.at[0, "onset"], qtr1.at[0, "offset"])
+        ax2.broken_barh(
+            list(
+                zip(
+                    i["onset"].values,
+                    (i["offset"] - i["onset"]).values,
+                )
+            ),
+            (2.5, 0.99),
+            color=i["Color"],
+            edgecolor="black",
+            alpha=alpha,
+        )
+        ax2.set_xlim(qtr2.at[0, "onset"], qtr2.at[0, "offset"])
+        ax3.broken_barh(
+            list(
+                zip(
+                    i["onset"].values,
+                    (i["offset"] - i["onset"]).values,
+                )
+            ),
+            (2.5, 0.99),
+            color=i["Color"],
+            edgecolor="black",
+            alpha=alpha,
+        )
+        ax3.set_xlim(qtr3.at[0, "onset"], qtr3.at[0, "offset"])
+        ax4.broken_barh(
+            list(
+                zip(
+                    i["onset"].values,
+                    (i["offset"] - i["onset"]).values,
+                )
+            ),
+            (2.5, 0.99),
+            color=i["Color"],
+            edgecolor="black",
+            alpha=alpha,
+        )
+        ax4.set_xlim(qtr4.at[0, "onset"], qtr4.at[0, "offset"])
+    plt.savefig("{}.png".format(title))
 
 
 def plot_corpus(corpus):
@@ -186,10 +293,20 @@ def plot_corpus(corpus):
         for file in files:
             if file.endswith(".cha"):
                 f.append(str((os.path.join(root, file))))
+    pandizes = []
+    viz = []
     for i in f:
-        title = i.replace('/', '.')
+        title = i.replace("/", ".")
         try:
             x = pandize(i)
+        except:
+            pandizes += [i]
+        try:
             dual_stream_viz(x, title)
         except:
-            print(i)
+            viz += [i]
+    v = []
+    for i in viz:
+        if i not in pandizes:
+            v.append(i)
+    print(pandizes, v)
